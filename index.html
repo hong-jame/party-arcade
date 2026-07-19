@@ -183,6 +183,37 @@
   .ctrl-mirror{flex:1;width:100%;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:14px;text-align:center;overflow:hidden;touch-action:none}
   .ctrl-mirror .waiting{color:var(--dim);font-size:1.1rem;font-weight:700}
   .ctrl-hint{padding:10px;color:var(--faint);font-size:12px;text-align:center}
+  /* intro / how-to screen */
+  #introScreen{gap:4px}
+  .intro-round{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:800}
+  #introTitle{font-size:clamp(2rem,7vw,3.2rem);margin:2px 0}
+  .intro-fmt{color:var(--gold);font-weight:800;font-size:clamp(1rem,2.6vw,1.25rem)}
+  .introteams{display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;margin:12px 0 2px;font-weight:800;font-size:clamp(.9rem,2.3vw,1.05rem)}
+  .introteams .tvs{color:var(--faint);font-size:.85em}
+  .introteams .tA{color:var(--teamA)} .introteams .tB{color:var(--teamB)}
+  .intro-how{max-width:32ch;color:var(--text);font-size:clamp(1.02rem,2.7vw,1.28rem);line-height:1.65;margin:16px 0;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 20px}
+  #introReady{color:var(--dim);font-size:1rem;margin:6px 0 10px;min-height:24px}
+  #introReady b{color:var(--gold)}
+  /* controller native panels */
+  #ctrlPanel{flex:1;width:100%;display:flex;align-items:center;justify-content:center;padding:18px}
+  #ctrlPanel.hidden{display:none}
+  .cpanel{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;max-width:360px;width:100%}
+  .cp-round{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:800}
+  .cp-title{font-size:clamp(1.7rem,8vw,2.3rem);font-weight:850;line-height:1.1}
+  .cp-fmt{color:var(--gold);font-weight:800}
+  .cp-role{background:var(--surface);border:1px solid var(--border);border-radius:100px;padding:9px 18px;font-weight:850}
+  .cp-how{color:var(--text);font-size:1.08rem;line-height:1.65;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px}
+  .cp-ready{width:100%;font-size:1.2rem;padding:18px}
+  .cp-bal{color:var(--dim);font-size:1.05rem} .cp-bal b{color:var(--text)}
+  .cp-amt{font-size:clamp(32px,12vw,56px);font-weight:850;color:var(--gold);line-height:1}
+  .cp-amt small{font-size:14px;color:var(--dim);font-weight:600}
+  .cp-steppers{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;width:100%}
+  .cp-steppers button{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:18px 0;font-weight:850;font-size:16px;color:var(--text)}
+  .cp-betact{display:grid;grid-template-columns:auto 1fr;gap:8px;width:100%}
+  .cp-betact #cAllin{background:transparent;border:1px solid var(--gold);color:var(--gold);border-radius:12px;padding:0 18px;font-weight:850;font-size:15px}
+  .cp-betact .btn{font-size:1.1rem;padding:16px}
+  .cp-note{color:var(--good);font-weight:800;min-height:22px}
+  .cpanel button:disabled{opacity:.55}
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -235,7 +266,7 @@
       <div class="joinurl" id="hostConnStatus" style="font-weight:700"></div>
       <div class="slots" id="hostSlots"></div>
       <div class="opts" style="margin:18px 0 8px">
-        <div class="opt"><div class="lbl">라운드 수</div><div class="seg" id="segRounds2"><button data-v="4">4</button><button data-v="6">6</button><button data-v="8" class="on">8</button><button data-v="12">12</button></div></div>
+        <div class="opt"><div class="lbl">라운드 수</div><div class="seg" id="segRounds2"><button data-v="8">8</button><button data-v="15">15</button><button data-v="20" class="on">20</button><button data-v="30">30</button></div></div>
         <div class="opt"><div class="lbl">베팅</div><div class="seg" id="segBet2"><button data-v="1" class="on">ON</button><button data-v="0">OFF</button></div></div>
       </div>
       <button class="btn" id="hostStartBtn">게임 시작</button>
@@ -256,7 +287,8 @@
 
   <section class="screen hidden" id="ctrl">
     <div class="ctrl-top"><span class="ctrl-name" id="ctrlName"></span><span class="ctrl-status" id="ctrlStatus">연결 중…</span></div>
-    <div id="ctrlMirror" class="ctrl-mirror"></div>
+    <div id="ctrlPanel"></div>
+    <div id="ctrlMirror" class="ctrl-mirror hidden"></div>
     <div class="ctrl-hint" id="ctrlHint">방장 화면도 함께 보면 더 재밌어요 👀</div>
   </section>
 
@@ -267,7 +299,7 @@
       <div class="opt"><div class="lbl">사람 인원 (나머지 🤖 AI)</div>
         <div class="seg" id="segHumans"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4" class="on">4</button></div></div>
       <div class="opt"><div class="lbl">라운드 수</div>
-        <div class="seg" id="segRounds"><button data-v="4">4</button><button data-v="6">6</button><button data-v="8" class="on">8</button><button data-v="12">12</button></div></div>
+        <div class="seg" id="segRounds"><button data-v="8">8</button><button data-v="15">15</button><button data-v="20" class="on">20</button><button data-v="30">30</button></div></div>
       <div class="opt"><div class="lbl">베팅</div>
         <div class="seg" id="segBet"><button data-v="1" class="on">ON</button><button data-v="0">OFF</button></div></div>
     </div>
@@ -287,6 +319,16 @@
       🖱️ 마우스 PC는 커서가 하나뿐이라 한 번에 한 명만 눌러져요 — 이땐 AI와 연습용으로 좋아요.
     </div>
     <div class="row"><button class="btn" id="namesGo">시작하기</button><button class="btn ghost" id="namesBack">뒤로</button></div>
+  </section>
+
+  <section class="screen hidden" id="introScreen">
+    <div class="intro-round" id="introRound"></div>
+    <h1 id="introTitle"></h1>
+    <div class="intro-fmt" id="introFmt"></div>
+    <div id="introTeams"></div>
+    <div class="intro-how" id="introHow"></div>
+    <div id="introReady"></div>
+    <button class="btn" id="introStartBtn">시작! ▶</button>
   </section>
 
   <section class="screen hidden" id="result">
@@ -343,6 +385,43 @@ const PLAYERS=[
 const BASE_PAYOUT=[100,60,30,10];
 const BET_WEIGHT=[0.5,0.3,0.2,0.0];
 const FMTLABEL={ffa:'개인전',coop:'협동','2v2':'2:2 팀전','3v1':'3:1 비대칭'};
+function fmtDesc(f){ return f==='ffa'?'🎯 개인전 · 각자 겨루기': f==='coop'?'🤝 협동 · 다 같이 성공!': f==='2v2'?'👥 2:2 팀전': '🎭 3:1 · 혼자 vs 셋'; }
+const HOW={
+  '미친 탭':'5초 동안 화면을 최대한 빨리·많이 두드리세요! 제일 많이 두드린 사람 승.',
+  '반응 결투':'화면이 초록으로 바뀌는 순간 제일 먼저 탭! 미리 누르면 부정출발.',
+  '정지!':'움직이는 막대가 노란 칸에 왔을 때 탭해서 멈추기. 가까울수록 고득점.',
+  '숫자 순서':'흩어진 숫자를 1→9 순서대로 빠르게 탭! 제일 빨리 끝낸 사람 승.',
+  '색깔 반응':"가운데가 '초록'일 때만 탭! 다른 색에 누르면 감점.",
+  '풍선 불기':'꾹 눌러 풍선을 키우다가 터지기 직전에 손 떼기. 크게 살릴수록 승(터지면 0점).',
+  '지뢰밭':'칸을 눌러 여세요. 지뢰(💣)를 피해 최대한 많이 연 사람 승.',
+  '뜨거운 감자':'폭탄이 오면 빨리 탭해 옆으로 넘기기. 터질 때 들고 있으면 꼴찌!',
+  '원 그리기':'손가락으로 최대한 동그란 원을 그리세요. 동그랄수록 고득점.',
+  '다같이 두더지':'내 칸에 나오는 두더지(🦔)를 다 같이 열심히 잡아요! (협동)',
+  '4색 신호':'가운데에 내 색이 뜨면 내가 탭! 팀이 놓치지 않게 (협동).',
+  '폭탄 해체':"'지금 탭!'이 뜬 사람만 순서대로 눌러요. 틀리면 감점 (협동).",
+  '동시 폭죽':"'발사!'가 뜨면 4명이 최대한 '동시에' 탭! 손발 맞추기 (협동).",
+  '물통 릴레이':"'받아!'가 오면 빨리 탭해 옆으로 넘겨요. 리듬 맞춰 (협동).",
+  '균형 판':'판이 한쪽으로 기울면 반대쪽 사람이 탭해 가운데로! (협동)',
+  '벽 넘기':'다가오는 벽의 초록 칸(✅)을 골라 탭하세요. 다 같이 통과 (협동).',
+  '줄다리기':'우리 팀끼리 힘껏 연타! 밧줄을 우리 쪽으로 당기기 (2:2).',
+  '색칠 전쟁':'탭할수록 우리 팀 색 칸이 늘어나요. 더 많이 칠한 팀 승 (2:2).',
+  '팀 싱크':"'지금 탭!'에 짝꿍과 최대한 동시에! 손발 맞는 팀 승 (2:2).",
+  '이어달리기':'첫 주자가 다 채우면 둘째 주자가 이어서 연타. 먼저 완주한 팀 승 (2:2).',
+  '패스 앤 슛':'짝꿍과 번갈아 탭(패스)한 뒤 슛! 먼저 골 넣는 팀 승 (2:2).',
+  '공격 vs 수비':'공격 팀은 슛(연타), 수비 팀은 막기(연타). 역할 바꿔가며 (2:2).',
+  '기억 짝맞추기':'카드를 뒤집어 같은 그림 짝 찾기. 먼저 다 맞춘 팀 승 (2:2).',
+  '술래잡기':'도망자는 마구 탭해 도망! 추격자들은 도망자가 뜬 칸을 재빨리 탭해 잡기 (3:1).',
+  '도둑과 경비':"도둑은 연타로 게이지 채우기! 경비는 '검문🚨' 뜨면 빨리 탭해 방해 (3:1).",
+  '혼자 살아남기':"생존자는 화면을 '꾹 눌러' 방어! 공격 3명은 마구 탭해 방어막 깎기 (3:1).",
+  '임포스터':'다들 공개 지시대로 색을 눌러요. 임포스터만 몰래 다른 색! 투표로 임포스터 찾기 (3:1).',
+  '보스전':'용사 3명이 보스를 연타 공격! 🔴위험이 뜬 사람은 재빨리 탭해 회피 (3:1).',
+  '왕과 자객':'자객은 3명 중 진짜 왕을 지목(기회 2번)! 왕은 정체를 숨기고 버티기 (3:1).',
+  '폭탄 사수':'폭탄마는 폭탄을 3인조에게 넘겨 터뜨리기! 3인조는 넘기고 버티기 (3:1).'
+};
+function teamsHtml(teams){ if(!teams)return '';
+  if(teams.type==='2v2') return '<div class="introteams"><span class="tteam tA">🟠 A팀: '+teams.A.map(i=>PLAYERS[i].name).join(', ')+'</span><span class="tvs">VS</span><span class="tteam tB">🩵 B팀: '+teams.B.map(i=>PLAYERS[i].name).join(', ')+'</span></div>';
+  if(teams.type==='3v1') return '<div class="introteams"><span class="tteam" style="color:var(--gold)">⭐ 혼자: '+PLAYERS[teams.solo].name+'</span><span class="tvs">VS</span><span class="tteam" style="color:var(--p3)">🤝 3인조: '+teams.trio.map(i=>PLAYERS[i].name).join(', ')+'</span></div>';
+  return ''; }
 
 let state={rounds:8,betting:true,humans:4,coins:[1000,1000,1000,1000],round:0,history:[]};
 const isAI=pid=>pid>=state.humans;
@@ -447,13 +526,18 @@ $('#namesGo').onclick=()=>{ initAudio();
 };
 
 function startTournament(){
-  state.coins=[1000,1000,1000,1000]; state.round=0; state.history=[];
+  state.coins=[1000,1000,1000,1000]; state.round=0; state.history=[]; gameBag=[];
   buildBoard(); $('#lobby').classList.add('hidden'); nextRound();
 }
 
 /* ---------- round flow ---------- */
-let GAMES=[]; let lastGameIdx=-1;
-function pickGame(){ let i; do{ i=Math.floor(rand()*GAMES.length); }while(i===lastGameIdx&&GAMES.length>1); lastGameIdx=i; return GAMES[i]; }
+let GAMES=[]; let lastGameIdx=-1; let gameBag=[];
+// 셔플백: 30개를 섞어 한 바퀴 다 돌 때까지 중복 없이 뽑음 (바퀴 넘어갈 때 직전 게임과 겹치면 자리 바꿈)
+function pickGame(){
+  if(!gameBag.length){ gameBag=shuffle(GAMES.map((_,i)=>i));
+    if(gameBag[0]===lastGameIdx&&gameBag.length>1){ const j=1+Math.floor(rand()*(gameBag.length-1)); [gameBag[0],gameBag[j]]=[gameBag[j],gameBag[0]]; } }
+  const i=gameBag.shift(); lastGameIdx=i; return GAMES[i];
+}
 
 function assignTeams(format){
   if(format==='2v2'){ const s=shuffle([0,1,2,3]); const A=[s[0],s[1]],B=[s[2],s[3]];
@@ -469,13 +553,13 @@ async function nextRound(){
   const mult=(state.rounds>=6 && state.round>state.rounds-3)?2:1;
   showHUD(game,mult);
   const teams=assignTeams(game.format);
-  if(teams){ pub('reveal','역할 확인! 📱 폰을 봐요'); await teamReveal(game,teams); }
-  pub('bet', state.betting?'💰 베팅! 판돈 걸고 준비완료':'게임 준비');
-  const wagers = state.betting ? await betPhase() : [0,0,0,0];
+  await introReadyPhase(game,teams,mult);              // 설명 + 역할 + 준비 게이트
+  const wagers = state.betting ? await betPhaseUnified(game,teams) : [0,0,0,0];
+  ['introScreen','result','final'].forEach(s=>$('#'+s).classList.add('hidden'));
   hud.classList.remove('hidden'); board.classList.remove('hidden');
   pub('countdown','곧 시작!');
   await countdown(['3','2','1','시작!']);
-  pub('play', game.title+' 진행 중! 📱 폰으로 조작');
+  pub('play', game.title+' — 📱 폰으로 조작!');
   const playP=game.play(teams);      // executor renders synchronously
   const botStop=startBots(game,teams);
   const result=await playP; botStop();
@@ -513,7 +597,62 @@ function teamReveal(game,teams){
   });
 }
 
-/* ---------- betting ---------- */
+/* ---------- intro / how-to + ready gate ---------- */
+function netMeta(game,teams,mult){ if(!(ONLINE&&isHost))return;
+  net.write('game',{title:game.title,how:HOW[game.title]||'',fmt:fmtDesc(game.format),round:state.round,total:state.rounds,mult});
+  net.write('coins',state.coins.slice());
+  const roles=['','','',''];
+  if(teams&&teams.type==='2v2'){ PLAYERS.forEach(p=>{ const t=teams.teamOf(p.id); const mate=(t==='A'?teams.A:teams.B).find(x=>x!==p.id); roles[p.id]=(t==='A'?'🟠 A팀':'🩵 B팀')+' · 짝꿍 '+PLAYERS[mate].name; }); }
+  else if(teams&&teams.type==='3v1'){ PLAYERS.forEach(p=>{ roles[p.id]= teams.isSolo(p.id)?('⭐ '+(game.soloName||'혼자!')):('🤝 '+(game.trioName||'3인조 팀')); }); }
+  net.write('roles',roles);
+}
+function fillIntro(game,teams,mult){
+  $('#introRound').textContent='게임 '+state.round+' / '+state.rounds+(mult>1?'   💰 배당 ×2':'');
+  $('#introTitle').textContent=game.title;
+  $('#introFmt').textContent=fmtDesc(game.format);
+  $('#introTeams').innerHTML=teamsHtml(teams);
+  $('#introHow').textContent=HOW[game.title]||'';
+}
+function introReadyPhase(game,teams,mult){ return new Promise(resolve=>{
+  board.classList.add('hidden'); center('');
+  fillIntro(game,teams,mult); show('introScreen');
+  if(ONLINE&&isHost){
+    netMeta(game,teams,mult); pub('intro','📖 설명 읽는 중 — 폰에서 "준비 완료"를 눌러요');
+    const R=state.round; const need=[]; for(let p=0;p<state.humans;p++)need.push(p); const readySet=new Set();
+    const upd=()=>{ $('#introReady').innerHTML = need.length ? ('📱 준비 완료 <b>'+readySet.size+' / '+need.length+'</b>'+(readySet.size<need.length?' — 폰에서 눌러주세요':' — 시작합니다!')) : '참가자 없음 · AI로 진행'; };
+    upd(); $('#introStartBtn').textContent = need.length? '기다리지 않고 바로 시작 ▶' : '시작 ▶';
+    let done=false; const fin=()=>{ if(done)return; done=true; clearTimeout(to); resolve(); };
+    net.watch('ready/R'+R, obj=>{ if(obj)need.forEach(p=>{ if(obj[p])readySet.add(p); }); upd(); if(need.length&&need.every(p=>readySet.has(p)))setTimeout(fin,500); });
+    $('#introStartBtn').onclick=()=>{ sfx.tick(); fin(); };
+    const to=setTimeout(fin, 45000);
+    if(!need.length) setTimeout(fin,1600);
+  } else {
+    $('#introReady').innerHTML=''; $('#introStartBtn').textContent='시작! ▶';
+    $('#introStartBtn').onclick=()=>{ sfx.tick(); resolve(); };
+  }
+}); }
+
+/* ---------- betting (offline corners  OR  online per-phone) ---------- */
+function betPhaseUnified(game,teams){
+  if(!(ONLINE&&isHost)){ $('#introScreen').classList.add('hidden'); return betPhase(); }
+  return new Promise(resolve=>{
+    $('#introRound').textContent='게임 '+state.round+' / '+state.rounds;
+    $('#introTitle').textContent='💰 베팅';
+    $('#introFmt').textContent='각자 폰에서 판돈을 걸고 "준비 완료"';
+    $('#introTeams').innerHTML=''; $('#introHow').textContent='이기면 판돈을 더 받고, 지면 잃어요. 안 걸어도 됩니다.';
+    show('introScreen');
+    pub('bet','💰 베팅 — 📱 폰에서 판돈을 걸어요'); net.write('coins',state.coins.slice());
+    const R=state.round; const wager=[0,0,0,0]; const readySet=new Set(); const need=[]; for(let p=0;p<state.humans;p++)need.push(p);
+    for(let p=state.humans;p<4;p++){ wager[p]= rand()<0.4?0:Math.min(state.coins[p],Math.round(state.coins[p]*(0.03+rand()*0.12)/10)*10); }
+    const upd=()=>{ $('#introReady').innerHTML = need.length ? ('💰 베팅 완료 <b>'+readySet.size+' / '+need.length+'</b>') : 'AI만 참여'; };
+    upd(); $('#introStartBtn').textContent='기다리지 않고 바로 시작 ▶';
+    let done=false; const fin=()=>{ if(done)return; done=true; clearTimeout(to); resolve(wager.slice()); };
+    net.watch('bet/R'+R, obj=>{ if(obj)need.forEach(p=>{ const b=obj[p]; if(b){ wager[p]=clamp(b.wager||0,0,state.coins[p]); if(b.ready)readySet.add(p); } }); upd(); if(need.length&&need.every(p=>readySet.has(p)))setTimeout(fin,400); });
+    $('#introStartBtn').onclick=()=>{ sfx.tick(); fin(); };
+    const to=setTimeout(fin, 45000);
+    if(!need.length) setTimeout(fin,1200);
+  });
+}
 function betPhase(){
   board.classList.remove('hidden');
   return new Promise(resolve=>{
@@ -1269,7 +1408,7 @@ function renderQR(url){ const box=$('#qrBox'); if(!box)return; if(typeof qrcode=
   try{ const qr=qrcode(0,'M'); qr.addData(url); qr.make(); box.innerHTML=qr.createSvgTag({cellSize:5,margin:1,scalable:true}); }catch(e){ box.innerHTML=''; } }
 
 /* ---- screen routing ---- */
-const show=id=>{ ['modeSelect','online','ctrl','lobby','names','result','final'].forEach(s=>$('#'+s)&&$('#'+s).classList.toggle('hidden',s!==id)); };
+const show=id=>{ ['modeSelect','online','ctrl','lobby','names','introScreen','result','final'].forEach(s=>$('#'+s)&&$('#'+s).classList.toggle('hidden',s!==id)); };
 $('#modeOffline').onclick=()=>{ initAudio(); ONLINE=false; show('lobby'); };
 $('#modeOnline').onclick=()=>{ initAudio(); show('online');
   $('#onlineChoose').classList.remove('hidden'); $('#hostLobby').classList.add('hidden'); $('#joinForm').classList.add('hidden');
@@ -1372,26 +1511,60 @@ $('#joinGoBtn').onclick=()=>{ initAudio();
         : '❌ 방을 못 찾았어요. 코드를 확인하고, 방장이 먼저 방을 만들었는지 봐주세요.'; }; }
   else doJoin();
 }
-let ctrlPhase='';
+let ctrlPhase='', ctrlGame=null, ctrlRoles=null, ctrlCoins=null, myWager=0, curBetR=-1;
 function becomeController(pid,name){
   myPid=pid; show('ctrl');
   $('#ctrlName').textContent=PLAYERS[pid].emoji+' '+name;
-  const mir=$('#ctrlMirror'); mir.innerHTML='<div class="waiting">방장이 시작하길 기다리는 중… ✊</div>';
-  const waitCard=t=>{ mir.innerHTML='<div class="waiting">'+t+'</div>'; };
   net.watch('status',s=>{ if(s!=null)$('#ctrlStatus').textContent=s; });
-  net.watch('phase',ph=>{ ctrlPhase=ph;
-    if(ph==='result') waitCard('결과 확인 중… 방장 화면을 봐요 👀');
-    else if(ph==='final') waitCard('🏆 최종 결과! 방장 화면을 봐요');
-    else if(ph==='countdown') waitCard('곧 시작! 준비 ✊');
-    else if(ph==='lobby') waitCard('방장이 시작하길 기다리는 중…');
-  });
-  net.watch('mirror'+pid,m=>{ if(m&&m.html!=null && ['bet','reveal','play',''].includes(ctrlPhase)){ mir.innerHTML=m.html; } });
-  let dragging=false;
-  const rel=(type,e)=>{ const r=mir.getBoundingClientRect(); net.write('in'+myPid,{seq:++inSeq,type,x:clamp((e.clientX-r.left)/r.width,0,1),y:clamp((e.clientY-r.top)/r.height,0,1)}); };
+  net.watch('game', g=>{ ctrlGame=g; if(ctrlPhase==='intro')renderCtrl(); });
+  net.watch('roles', r=>{ ctrlRoles=r; if(ctrlPhase==='intro')renderCtrl(); });
+  net.watch('coins', c=>{ ctrlCoins=c; });
+  net.watch('phase', ph=>{ ctrlPhase=ph; renderCtrl(); });
+  net.watch('mirror'+pid, m=>{ if(m&&m.html!=null && ctrlPhase==='play') $('#ctrlMirror').innerHTML=m.html; });
+  const mir=$('#ctrlMirror'); let dragging=false;
+  const rel=(type,e)=>{ if(ctrlPhase!=='play')return; const r=mir.getBoundingClientRect(); net.write('in'+myPid,{seq:++inSeq,type,x:clamp((e.clientX-r.left)/r.width,0,1),y:clamp((e.clientY-r.top)/r.height,0,1)}); };
   mir.addEventListener('pointerdown',e=>{ dragging=true; rel('down',e); });
   mir.addEventListener('pointermove',e=>{ if(dragging)rel('move',e); });
   const end=e=>{ if(dragging){ dragging=false; rel('up',e); } };
   mir.addEventListener('pointerup',end); mir.addEventListener('pointercancel',end); mir.addEventListener('pointerleave',end);
+  renderCtrl();
+}
+function renderCtrl(){
+  const panel=$('#ctrlPanel'), mir=$('#ctrlMirror'); const ph=ctrlPhase;
+  if(ph==='play'){ panel.classList.add('hidden'); mir.classList.remove('hidden'); return; }
+  mir.classList.add('hidden'); panel.classList.remove('hidden');
+  if(ph==='intro'){ renderIntroPanel(); }
+  else if(ph==='bet'){ if(curBetR!==(ctrlGame&&ctrlGame.round)){ curBetR=(ctrlGame&&ctrlGame.round); myWager=0; } renderBetPanel(); }
+  else { const map={countdown:'곧 시작! 준비 ✊',result:'결과 확인 중 — 방장 화면 👀',final:'🏆 최종 결과! 방장 화면 👀',lobby:'방장이 시작하길 기다리는 중… ✊'};
+    panel.innerHTML='<div class="cpanel"><div class="waiting">'+(map[ph]||'대기 중…')+'</div></div>'; }
+}
+function renderIntroPanel(){ const g=ctrlGame||{}; const role=(ctrlRoles&&ctrlRoles[myPid])||'';
+  $('#ctrlPanel').innerHTML='<div class="cpanel">'
+    +'<div class="cp-round">게임 '+(g.round||'')+' / '+(g.total||'')+'</div>'
+    +'<div class="cp-title">'+(g.title||'')+'</div>'
+    +'<div class="cp-fmt">'+(g.fmt||'')+'</div>'
+    +(role?'<div class="cp-role">'+role+'</div>':'')
+    +'<div class="cp-how">'+(g.how||'')+'</div>'
+    +'<button class="btn cp-ready" id="cReadyBtn">준비 완료 ✓</button>'
+    +'<div class="cp-note" id="cReadyNote"></div></div>';
+  $('#cReadyBtn').onclick=()=>{ sfx.tick(); buzz(20); net.write('ready/R'+(g.round)+'/'+myPid,true);
+    const b=$('#cReadyBtn'); b.textContent='✅ 준비됨!'; b.disabled=true; $('#cReadyNote').textContent='다른 사람들을 기다리는 중…'; };
+}
+function renderBetPanel(){ const g=ctrlGame||{}; const bal=(ctrlCoins&&ctrlCoins[myPid])||0;
+  $('#ctrlPanel').innerHTML='<div class="cpanel">'
+    +'<div class="cp-title">💰 베팅</div>'
+    +'<div class="cp-how">'+(g.title||'')+' — 이기면 판돈을 더 받고, 지면 잃어요. 안 걸어도 됩니다.</div>'
+    +'<div class="cp-bal">내 코인 <b class="mono">'+fmt(bal)+'</b></div>'
+    +'<div class="cp-amt"><span class="mono" id="cWager">0</span> <small>코인 베팅</small></div>'
+    +'<div class="cp-steppers"><button data-d="-100">−100</button><button data-d="-10">−10</button><button data-d="10">+10</button><button data-d="100">+100</button></div>'
+    +'<div class="cp-betact"><button id="cAllin">올인</button><button class="btn" id="cBetReady">준비 완료 ✓</button></div>'
+    +'<div class="cp-note" id="cBetNote"></div></div>';
+  const upd=()=>$('#cWager').textContent=fmt(myWager);
+  $$('#ctrlPanel .cp-steppers button').forEach(b=>b.onclick=()=>{ myWager=clamp(myWager+ +b.dataset.d,0,bal); upd(); sfx.tick(); });
+  $('#cAllin').onclick=()=>{ myWager=bal; upd(); sfx.good(); };
+  $('#cBetReady').onclick=()=>{ net.write('bet/R'+(g.round)+'/'+myPid,{wager:myWager,ready:true}); buzz(20);
+    $('#cBetReady').textContent='✅ 완료!'; $('#cBetReady').disabled=true; $('#cAllin').disabled=true;
+    $$('#ctrlPanel .cp-steppers button').forEach(b=>b.disabled=true); $('#cBetNote').textContent='다른 사람들을 기다리는 중…'; };
 }
 
 /* QR/링크로 열면(?room=NNNN) 코드 입력 없이 바로 참가 화면으로 */
