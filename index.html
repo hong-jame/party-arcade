@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>4인 파티 아케이드 · 코인 토너먼트</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
@@ -1154,7 +1155,7 @@ GAMES=[ gameMadTap,gameReaction,gameStop,gameNumberOrder,colorReact,balloon,mine
 /* ============================================================
    ONLINE MULTIPLAYER  (host screen + phone controllers)
    ============================================================ */
-TRANSPORT = FIREBASE_CONFIG ? 'firebase' : 'local';
+TRANSPORT = FIREBASE_CONFIG ? 'firebase' : (typeof Peer!=='undefined' ? 'peer' : 'local');
 
 /* ---- transports (same tiny interface: write(path,val) / watch(path,cb)) ---- */
 function LocalTransport(code){
@@ -1178,7 +1179,36 @@ function FirebaseTransport(code,cfg){
     write(path,val){ db.ref(base+path).set(val); },
     watch(path,cb){ db.ref(base+path).on('value',s=>{ const v=s.val(); if(v!==null&&v!==undefined) cb(v); }); } };
 }
-function makeTransport(code){ return TRANSPORT==='local' ? LocalTransport(code) : FirebaseTransport(code,FIREBASE_CONFIG); }
+// P2P: 방 코드만으로 연결 (계정·설정 불필요). 방장이 허브, 컨트롤러는 방장에 연결.
+function PeerTransport(code, asHost){
+  const tree={}, subs=[];
+  const get=path=>path.split('/').filter(Boolean).reduce((o,k)=>o&&o[k],tree);
+  const setP=(path,val)=>{ const ks=path.split('/').filter(Boolean); let o=tree; for(let i=0;i<ks.length-1;i++){ o[ks[i]]=o[ks[i]]||{}; o=o[ks[i]]; } o[ks[ks.length-1]]=val; };
+  const notify=path=>subs.forEach(s=>{ if(path===s.path||path.startsWith(s.path+'/')||s.path.startsWith(path+'/')) s.cb(get(s.path)); });
+  const ROOM='partyarcadeHJ-'+code;
+  let conns=[], hostConn=null, ready=false; const queue=[];
+  const api={ kind:'peer', code, onReady:null, onError:null,
+    write(path,val){ setP(path,val); notify(path);
+      if(asHost){ conns.forEach(c=>{ if(c.open)c.send({t:'set',path,val}); }); }
+      else { const m={t:'set',path,val}; if(ready&&hostConn&&hostConn.open)hostConn.send(m); else queue.push(m); } },
+    watch(path,cb){ subs.push({path,cb}); const v=get(path); if(v!==undefined)cb(v); } };
+  let peer; try{ peer = asHost ? new Peer(ROOM) : new Peer(); }catch(e){ setTimeout(()=>api.onError&&api.onError(e),0); return api; }
+  peer.on('error', e=>{ api.onError&&api.onError(e); });
+  if(asHost){
+    peer.on('open', ()=>{ ready=true; api.onReady&&api.onReady(); });
+    peer.on('connection', conn=>{ conns.push(conn);
+      conn.on('open', ()=>conn.send({t:'snap',tree}));
+      conn.on('data', msg=>{ if(msg&&msg.t==='set'){ setP(msg.path,msg.val); notify(msg.path); conns.forEach(c=>{ if(c!==conn&&c.open)c.send(msg); }); } });
+      conn.on('close', ()=>{ conns=conns.filter(c=>c!==conn); }); });
+  } else {
+    peer.on('open', ()=>{ hostConn=peer.connect(ROOM,{reliable:true});
+      hostConn.on('open', ()=>{ ready=true; queue.forEach(m=>hostConn.send(m)); queue.length=0; api.onReady&&api.onReady(); });
+      hostConn.on('data', msg=>{ if(!msg)return; if(msg.t==='snap'){ Object.assign(tree,msg.tree); subs.forEach(s=>{ const v=get(s.path); if(v!==undefined)s.cb(v); }); } else if(msg.t==='set'){ setP(msg.path,msg.val); notify(msg.path); } });
+      hostConn.on('error', e=>api.onError&&api.onError(e)); });
+  }
+  return api;
+}
+function makeTransport(code,asHost){ return TRANSPORT==='peer' ? PeerTransport(code,asHost) : TRANSPORT==='local' ? LocalTransport(code) : FirebaseTransport(code,FIREBASE_CONFIG); }
 function makeCode(){ const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<4;i++)s+=A[Math.floor(rand()*A.length)]; return s; }
 
 /* ---- screen routing ---- */
@@ -1187,8 +1217,10 @@ $('#modeOffline').onclick=()=>{ initAudio(); ONLINE=false; show('lobby'); };
 $('#modeOnline').onclick=()=>{ initAudio(); show('online');
   $('#onlineChoose').classList.remove('hidden'); $('#hostLobby').classList.add('hidden'); $('#joinForm').classList.add('hidden');
   const ns=$('#netStatus'); ns.innerHTML = TRANSPORT==='firebase'
-    ? '🌐 <b>온라인 연결</b>: 서로 다른 폰·네트워크에서도 됩니다.'
-    : '🧪 <b>테스트 모드</b>: 지금은 Firebase 설정 전이라 <b>같은 브라우저의 여러 탭</b>끼리만 연결돼요. 실제 여러 폰 연결은 아래 안내대로 Firebase 설정을 넣고 배포하면 됩니다.';
+    ? '🌐 <b>온라인 연결(Firebase)</b>: 서로 다른 폰·데이터망에서도 잘 됩니다.'
+    : TRANSPORT==='peer'
+    ? '🌐 <b>방 코드만으로 바로 연결!</b> 설정·계정 필요 없어요. <b>같은 와이파이</b>에서 가장 잘 되고, 일부 통신망(회사·학교 등)에선 가끔 연결이 안 될 수 있어요.'
+    : '🧪 <b>테스트 모드</b>: 연결 라이브러리를 못 불러와 <b>같은 브라우저 탭</b>끼리만 됩니다(인터넷 확인).';
 };
 $('#onlineBack').onclick=()=>show('modeSelect');
 $('#btnHost').onclick=hostCreate;
@@ -1199,23 +1231,28 @@ segPick($('#segBet2'),v=>state.betting=!!v);
 
 /* ---- HOST ---- */
 function hostCreate(){
-  try{ ONLINE=true; isHost=true; roomCode=makeCode(); net=makeTransport(roomCode); }
-  catch(e){ alert('연결 실패: '+e.message); return; }
-  joined.length=0;
+  ONLINE=true; isHost=true; joined.length=0;
   $('#onlineChoose').classList.add('hidden'); $('#hostLobby').classList.remove('hidden');
-  $('#roomCodeBox').textContent=roomCode;
   $('#joinUrl').textContent=location.origin+location.pathname.replace(/index\.html$/,'');
-  net.write('phase','lobby'); net.write('status','참가 대기 중');
-  renderHostSlots();
-  net.watch('players',obj=>{ if(!obj)return;
-    Object.keys(obj).forEach(cid=>{ const p=obj[cid];
-      if(p&&(p.pid===null||p.pid===undefined)&&!joined.find(j=>j.cid===cid)&&joined.length<4){
-        const pid=joined.length; joined.push({cid,name:p.name||('P'+(pid+1)),pid});
-        net.write('players/'+cid+'/pid',pid); renderHostSlots();
-      }});
-  });
-  // input from controllers -> synthetic events on host
-  for(let pid=0;pid<4;pid++){ (p=>net.watch('in'+p,inp=>{ if(ONLINE&&isHost&&inp&&inp.seq!==lastSeq[p]){ lastSeq[p]=inp.seq; applyRemoteInput(p,inp); } }))(pid); }
+  startHostRoom();
+}
+function startHostRoom(){
+  roomCode=makeCode(); $('#roomCodeBox').textContent=roomCode;
+  try{ net=makeTransport(roomCode,true); }catch(e){ alert('연결 실패: '+e.message); return; }
+  const wire=()=>{
+    net.write('phase','lobby'); net.write('status','참가 대기 중'); renderHostSlots();
+    net.watch('players',obj=>{ if(!obj)return;
+      Object.keys(obj).forEach(cid=>{ const p=obj[cid];
+        if(p&&(p.pid===null||p.pid===undefined)&&!joined.find(j=>j.cid===cid)&&joined.length<4){
+          const pid=joined.length; joined.push({cid,name:p.name||('P'+(pid+1)),pid});
+          net.write('players/'+cid+'/pid',pid); renderHostSlots();
+        }});
+    });
+    for(let pid=0;pid<4;pid++){ (p=>net.watch('in'+p,inp=>{ if(ONLINE&&isHost&&inp&&inp.seq!==lastSeq[p]){ lastSeq[p]=inp.seq; applyRemoteInput(p,inp); } }))(pid); }
+  };
+  if(net.kind==='peer'){ net.onReady=wire;
+    net.onError=e=>{ if(e&&e.type==='unavailable-id'){ startHostRoom(); } else { $('#joinUrl').innerHTML='<span style="color:var(--bad)">연결 서버 문제일 수 있어요 — 새로고침 후 다시 시도</span>'; } }; }
+  else wire();
 }
 function renderHostSlots(){
   const box=$('#hostSlots'); box.innerHTML='';
@@ -1258,12 +1295,17 @@ function applyRemoteInput(pid,inp){
 $('#joinGoBtn').onclick=()=>{ initAudio();
   const code=($('#joinCode').value||'').trim().toUpperCase(); const name=($('#joinName').value||'').trim()||'플레이어';
   if(code.length<3){ $('#joinCode').focus(); return; }
-  try{ ONLINE=true; isHost=false; roomCode=code; net=makeTransport(code); }
-  catch(e){ alert('연결 실패: '+e.message); return; }
+  ONLINE=true; isHost=false; roomCode=code; myPid=null;
+  try{ net=makeTransport(code,false); }catch(e){ alert('연결 실패: '+e.message); return; }
   myCid='c'+Math.floor(rand()*1e9);
-  const js=$('#joinStatus'); js.style.display='block'; js.innerHTML='🔗 <b>'+code+'</b> 방에 연결 중… 방장이 게임을 시작하면 자동으로 넘어가요.';
-  net.write('players/'+myCid,{name,pid:null});
-  net.watch('players/'+myCid+'/pid',pid=>{ if(pid!=null && myPid==null) becomeController(pid,name); });
+  const js=$('#joinStatus'); js.style.display='block'; js.innerHTML='🔗 <b>'+code+'</b> 방에 연결 중…';
+  const doJoin=()=>{ net.write('players/'+myCid,{name,pid:null});
+    net.watch('players/'+myCid+'/pid',pid=>{ if(pid!=null && myPid==null) becomeController(pid,name); });
+    js.innerHTML='✅ 연결됨! 방장이 시작하면 자동으로 넘어가요.'; };
+  if(net.kind==='peer'){ let ok=false; net.onReady=()=>{ ok=true; doJoin(); };
+    net.onError=()=>{ if(!ok) js.innerHTML='❌ 방을 못 찾았어요. 코드를 확인하고, 방장이 먼저 방을 만들었는지 봐주세요.'; };
+    setTimeout(()=>{ if(!ok) js.innerHTML='⏳ 연결 지연 중… 같은 와이파이인지 확인해보세요.'; },6000); }
+  else doJoin();
 }
 let ctrlPhase='';
 function becomeController(pid,name){
