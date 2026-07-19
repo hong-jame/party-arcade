@@ -1374,6 +1374,7 @@ const gDodge={ title:'메테오 대시', format:'ffa', selfAI:true, lowerBetter:
     const aliveN=st.filter(s=>s.alive).length;
     if((st.length>1&&aliveN<=1)||el>DUR) finish();
   });
+  setTimeout(()=>finish(), DUR+2500);   // 안전장치: 루프가 멈춰도 반드시 끝남
   function finish(){ if(done)return; done=true; stop(); ac.abort(); resolve(st.map(s=> s.alive? Math.round(performance.now()-t0)+5000 : Math.round(s.deadAt))); }
 });}};
 
@@ -1404,6 +1405,7 @@ const gRhythm={ title:'비트 러시', format:'ffa', selfAI:true, lowerBetter:fa
     });
     if(el>DUR) finish();
   });
+  setTimeout(()=>finish(), DUR+2500);
   function finish(){ if(done)return; done=true; stop(); ac.abort(); resolve(st.map(s=>s.score)); }
 });}};
 
@@ -1433,6 +1435,7 @@ const gStack={ title:'스택 타워', format:'ffa', selfAI:true, lowerBetter:fal
     });
     if(st.every(s=>!s.alive)||el>DUR) finish();
   });
+  setTimeout(()=>finish(), DUR+2500);
   function finish(){ if(done)return; done=true; stop(); ac.abort(); resolve(st.map(s=>s.height-1)); }
 });}};
 
