@@ -231,6 +231,7 @@
       <div id="qrBox" class="qrbox"></div>
       <div class="roomcode" id="roomCodeBox">----</div>
       <div class="joinurl" id="joinUrl"></div>
+      <div class="joinurl" id="hostConnStatus" style="font-weight:700"></div>
       <div class="slots" id="hostSlots"></div>
       <div class="opts" style="margin:18px 0 8px">
         <div class="opt"><div class="lbl">라운드 수</div><div class="seg" id="segRounds2"><button data-v="4">4</button><button data-v="6">6</button><button data-v="8" class="on">8</button><button data-v="12">12</button></div></div>
@@ -1183,6 +1184,14 @@ function FirebaseTransport(code,cfg){
     write(path,val){ db.ref(base+path).set(val); },
     watch(path,cb){ db.ref(base+path).on('value',s=>{ const v=s.val(); if(v!==null&&v!==undefined) cb(v); }); } };
 }
+// STUN + TURN(중계) — 직접 연결이 막힌 망(AP격리·대칭NAT)에서도 우회 연결되게 함
+const ICE={ iceServers:[
+  {urls:'stun:stun.l.google.com:19302'},
+  {urls:'stun:stun1.l.google.com:19302'},
+  {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+  {urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},
+  {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
+]};
 // P2P: 방 코드만으로 연결 (계정·설정 불필요). 방장이 허브, 컨트롤러는 방장에 연결.
 function PeerTransport(code, asHost){
   const tree={}, subs=[];
@@ -1190,26 +1199,36 @@ function PeerTransport(code, asHost){
   const setP=(path,val)=>{ const ks=path.split('/').filter(Boolean); let o=tree; for(let i=0;i<ks.length-1;i++){ o[ks[i]]=o[ks[i]]||{}; o=o[ks[i]]; } o[ks[ks.length-1]]=val; };
   const notify=path=>subs.forEach(s=>{ if(path===s.path||path.startsWith(s.path+'/')||s.path.startsWith(path+'/')) s.cb(get(s.path)); });
   const ROOM='partyarcadeHJ-'+code;
-  let conns=[], hostConn=null, ready=false; const queue=[];
-  const api={ kind:'peer', code, onReady:null, onError:null,
+  let conns=[], hostConn=null, ready=false, tries=0, closed=false; const queue=[]; let peer, cTimer=null;
+  const api={ kind:'peer', code, onReady:null, onError:null, onStatus:null,
     write(path,val){ setP(path,val); notify(path);
       if(asHost){ conns.forEach(c=>{ if(c.open)c.send({t:'set',path,val}); }); }
       else { const m={t:'set',path,val}; if(ready&&hostConn&&hostConn.open)hostConn.send(m); else queue.push(m); } },
-    watch(path,cb){ subs.push({path,cb}); const v=get(path); if(v!==undefined)cb(v); } };
-  let peer; try{ peer = asHost ? new Peer(ROOM) : new Peer(); }catch(e){ setTimeout(()=>api.onError&&api.onError(e),0); return api; }
-  peer.on('error', e=>{ api.onError&&api.onError(e); });
-  if(asHost){
-    peer.on('open', ()=>{ ready=true; api.onReady&&api.onReady(); });
-    peer.on('connection', conn=>{ conns.push(conn);
-      conn.on('open', ()=>conn.send({t:'snap',tree}));
-      conn.on('data', msg=>{ if(msg&&msg.t==='set'){ setP(msg.path,msg.val); notify(msg.path); conns.forEach(c=>{ if(c!==conn&&c.open)c.send(msg); }); } });
-      conn.on('close', ()=>{ conns=conns.filter(c=>c!==conn); }); });
-  } else {
-    peer.on('open', ()=>{ hostConn=peer.connect(ROOM,{reliable:true});
-      hostConn.on('open', ()=>{ ready=true; queue.forEach(m=>hostConn.send(m)); queue.length=0; api.onReady&&api.onReady(); });
-      hostConn.on('data', msg=>{ if(!msg)return; if(msg.t==='snap'){ Object.assign(tree,msg.tree); subs.forEach(s=>{ const v=get(s.path); if(v!==undefined)s.cb(v); }); } else if(msg.t==='set'){ setP(msg.path,msg.val); notify(msg.path); } });
-      hostConn.on('error', e=>api.onError&&api.onError(e)); });
-  }
+    watch(path,cb){ subs.push({path,cb}); const v=get(path); if(v!==undefined)cb(v); },
+    close(){ closed=true; try{ peer&&peer.destroy(); }catch(e){} } };
+  function setupHostConn(conn){ conns.push(conn);
+    conn.on('open', ()=>conn.send({t:'snap',tree}));
+    conn.on('data', msg=>{ if(msg&&msg.t==='set'){ setP(msg.path,msg.val); notify(msg.path); conns.forEach(c=>{ if(c!==conn&&c.open)c.send(msg); }); } });
+    conn.on('close', ()=>{ conns=conns.filter(c=>c!==conn); }); }
+  function connectHost(){ if(closed||ready)return; tries++; api.onStatus&&api.onStatus('연결 시도 '+tries);
+    try{ hostConn=peer.connect(ROOM,{reliable:true}); }catch(e){ return retryConnect(); }
+    hostConn.on('open', ()=>{ ready=true; clearTimeout(cTimer); queue.forEach(m=>hostConn.send(m)); queue.length=0; api.onReady&&api.onReady(); });
+    hostConn.on('data', msg=>{ if(!msg)return; if(msg.t==='snap'){ Object.assign(tree,msg.tree); subs.forEach(s=>{ const v=get(s.path); if(v!==undefined)s.cb(v); }); } else if(msg.t==='set'){ setP(msg.path,msg.val); notify(msg.path); } });
+    hostConn.on('error', ()=>retryConnect());
+    hostConn.on('close', ()=>{ if(!ready)retryConnect(); });
+    clearTimeout(cTimer); cTimer=setTimeout(()=>{ if(!ready)retryConnect(); }, 6000); }
+  function retryConnect(){ if(closed||ready)return; if(tries>=6){ api.onError&&api.onError({type:'give-up'}); return; } setTimeout(connectHost, 1200); }
+  try{ peer = asHost ? new Peer(ROOM,{config:ICE}) : new Peer(undefined,{config:ICE}); }
+  catch(e){ setTimeout(()=>api.onError&&api.onError(e),0); return api; }
+  peer.on('error', e=>{ const t=e&&e.type;
+    if(t==='unavailable-id'){ api.onError&&api.onError(e); return; }
+    if(!asHost && t==='peer-unavailable'){ api.onStatus&&api.onStatus('방장 찾는 중…'); retryConnect(); return; }
+    if(!asHost){ retryConnect(); return; }
+    api.onError&&api.onError(e); });
+  peer.on('disconnected', ()=>{ if(!closed){ try{ peer.reconnect(); }catch(e){} } });
+  if(asHost){ peer.on('open', ()=>{ ready=true; api.onReady&&api.onReady(); });
+    peer.on('connection', conn=>setupHostConn(conn)); }
+  else { peer.on('open', ()=>connectHost()); }
   return api;
 }
 function makeTransport(code,asHost){ return TRANSPORT==='peer' ? PeerTransport(code,asHost) : TRANSPORT==='local' ? LocalTransport(code) : FirebaseTransport(code,FIREBASE_CONFIG); }
@@ -1258,9 +1277,10 @@ function startHostRoom(){
     });
     for(let pid=0;pid<4;pid++){ (p=>net.watch('in'+p,inp=>{ if(ONLINE&&isHost&&inp&&inp.seq!==lastSeq[p]){ lastSeq[p]=inp.seq; applyRemoteInput(p,inp); } }))(pid); }
   };
-  if(net.kind==='peer'){ net.onReady=wire;
-    net.onError=e=>{ if(e&&e.type==='unavailable-id'){ startHostRoom(); } else { $('#joinUrl').innerHTML='<span style="color:var(--bad)">연결 서버 문제일 수 있어요 — 새로고침 후 다시 시도</span>'; } }; }
-  else wire();
+  if(net.kind==='peer'){ $('#hostConnStatus').innerHTML='🟡 방 여는 중…';
+    net.onReady=()=>{ $('#hostConnStatus').innerHTML='🟢 방 열림 — 이제 참가할 수 있어요'; wire(); };
+    net.onError=e=>{ if(e&&e.type==='unavailable-id'){ startHostRoom(); } else { $('#hostConnStatus').innerHTML='<span style="color:var(--bad)">⚠️ 연결 서버 문제 — 새로고침 후 다시 시도</span>'; } }; }
+  else { $('#hostConnStatus').innerHTML='🟢 방 열림'; wire(); }
 }
 function renderHostSlots(){
   const box=$('#hostSlots'); box.innerHTML='';
@@ -1310,9 +1330,13 @@ $('#joinGoBtn').onclick=()=>{ initAudio();
   const doJoin=()=>{ net.write('players/'+myCid,{name,pid:null});
     net.watch('players/'+myCid+'/pid',pid=>{ if(pid!=null && myPid==null) becomeController(pid,name); });
     js.innerHTML='✅ 연결됨! 방장이 시작하면 자동으로 넘어가요.'; };
-  if(net.kind==='peer'){ let ok=false; net.onReady=()=>{ ok=true; doJoin(); };
-    net.onError=()=>{ if(!ok) js.innerHTML='❌ 방을 못 찾았어요. 코드를 확인하고, 방장이 먼저 방을 만들었는지 봐주세요.'; };
-    setTimeout(()=>{ if(!ok) js.innerHTML='⏳ 연결 지연 중… 같은 와이파이인지 확인해보세요.'; },6000); }
+  if(net.kind==='peer'){ let ok=false;
+    net.onStatus=s=>{ if(!ok) js.innerHTML='🔗 <b>'+code+'</b> 연결 중… <span style="color:var(--faint)">('+s+')</span>'; };
+    net.onReady=()=>{ ok=true; doJoin(); };
+    net.onError=e=>{ if(ok)return; const t=e&&e.type;
+      js.innerHTML = (t==='give-up')
+        ? '❌ <b>연결 실패</b>. 같은 와이파이라도 <b>게스트·회사·공용 와이파이는 기기 간 차단(AP격리)</b>일 수 있어요.<br>① 방장·폰을 <b>같은 집 공유기</b>에 연결하거나<br>② 한 명이 <b>휴대폰 핫스팟</b>을 켜서 모두 거기에 연결한 뒤 다시 시도<br>그래도 안 되면 알려주세요 — 더 안정적인 Firebase 모드로 바꿔드려요.'
+        : '❌ 방을 못 찾았어요. 코드를 확인하고, 방장이 먼저 방을 만들었는지 봐주세요.'; }; }
   else doJoin();
 }
 let ctrlPhase='';
