@@ -143,6 +143,18 @@
   .pod .col{width:74px;border-radius:12px 12px 0 0;background:var(--pc);display:flex;align-items:flex-start;justify-content:center;padding-top:8px;color:#0d0a12;font-weight:850;font-size:22px}
   .pod .who{font-weight:800;font-size:14px} .pod .co{color:var(--gold);font-weight:850;font-size:15px}
   .medal{font-size:26px}
+  /* name entry */
+  #nameList{display:flex;flex-direction:column;gap:10px;width:100%;max-width:400px;margin:6px 0 2px}
+  .nrow{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--pc);border-radius:12px;padding:11px 14px}
+  .nrow .ndot{width:24px;height:24px;border-radius:50%;background:var(--pc);flex:none}
+  .nrow .ninfo{flex:1;text-align:left;min-width:0}
+  .nrow .ncorner{font-size:12px;color:var(--faint);font-weight:700}
+  .nrow .ninput{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:16px;font-weight:700;font-family:inherit;margin-top:4px}
+  .nrow .ninput:focus{outline:2px solid var(--pc);border-color:var(--pc)}
+  .nrow .naiName{font-weight:700;color:var(--dim);margin-top:4px;font-size:14px}
+  .howto{max-width:420px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin:16px 0;text-align:left;font-size:13.5px;color:var(--dim);line-height:1.6}
+  .howto b{color:var(--text)}
+  .howto .ht-title{font-weight:800;color:var(--gold);margin-bottom:7px;font-size:13px}
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -166,6 +178,20 @@
     </div>
     <div class="row"><button class="btn" id="startBtn">게임 시작</button><button class="btn ghost" id="fsBtn">전체화면</button></div>
     <p class="hint">미니게임 30종 · 사람이 2명만 있어도 나머지는 🤖 AI가 대신 플레이 · 시작 코인 1,000</p>
+  </section>
+
+  <section class="screen hidden" id="names">
+    <div style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:800">플레이어</div>
+    <h1>누가 <span class="g">참가</span>하나요?</h1>
+    <p class="sub">각자 아래 <b>자기 색깔 칸</b>을 하나씩 맡아요. 이름을 넣어주세요.</p>
+    <div id="nameList"></div>
+    <div class="howto">
+      <div class="ht-title">📱 여럿이 어떻게 같이 하나요?</div>
+      기기 <b>한 대</b>로 다 같이 즐겨요. 화면이 <b>4칸</b>으로 나뉘고, 각자 <b>자기 색 칸</b>을 맡아 <b>동시에</b> 손가락으로 터치합니다. 여러 명이 각자 다른 손가락으로 동시에 눌러도 모두 따로 인식돼요.<br><br>
+      ✅ <b>태블릿·폰(터치스크린)</b>에서 여러 명 동시 플레이가 됩니다.<br>
+      🖱️ 마우스 PC는 커서가 하나뿐이라 한 번에 한 명만 눌러져요 — 이땐 AI와 연습용으로 좋아요.
+    </div>
+    <div class="row"><button class="btn" id="namesGo">시작하기</button><button class="btn ghost" id="namesBack">뒤로</button></div>
   </section>
 
   <section class="screen hidden" id="result">
@@ -214,8 +240,8 @@ function buzz(p){try{navigator.vibrate&&navigator.vibrate(p);}catch(e){}}
 
 /* ---------- players / constants ---------- */
 const PLAYERS=[
-  {id:0,name:'빨강',emoji:'🔴',color:'var(--p0)',flip:true },
-  {id:1,name:'파랑',emoji:'🔵',color:'var(--p1)',flip:true },
+  {id:0,name:'빨강',emoji:'🔴',color:'var(--p0)',flip:false},
+  {id:1,name:'파랑',emoji:'🔵',color:'var(--p1)',flip:false},
   {id:2,name:'초록',emoji:'🟢',color:'var(--p2)',flip:false},
   {id:3,name:'보라',emoji:'🟣',color:'var(--p3)',flip:false},
 ];
@@ -297,8 +323,25 @@ segPick($('#segRounds'),v=>state.rounds=v);
 segPick($('#segBet'),v=>state.betting=!!v);
 segPick($('#segHumans'),v=>state.humans=v);
 $('#fsBtn').onclick=()=>{ initAudio(); const el=document.documentElement; (el.requestFullscreen||el.webkitRequestFullscreen||(()=>{})).call(el); };
-$('#startBtn').onclick=()=>{ initAudio(); startTournament(); };
-$('#againBtn').onclick=()=>location.reload();
+$('#startBtn').onclick=()=>{ initAudio(); showNames(); };
+$('#againBtn').onclick=()=>{ $('#final').classList.add('hidden'); $('#lobby').classList.remove('hidden'); };
+
+function showNames(){
+  const list=$('#nameList'); list.innerHTML='';
+  const corners=['왼쪽 위','오른쪽 위','왼쪽 아래','오른쪽 아래'];
+  PLAYERS.forEach(p=>{ const ai=isAI(p.id);
+    const row=document.createElement('div'); row.className='nrow'; row.style.setProperty('--pc',p.color);
+    row.innerHTML=`<div class="ndot"></div><div class="ninfo"><div class="ncorner">${p.emoji} ${corners[p.id]} 칸</div>`+
+      (ai?`<div class="naiName">🤖 AI 자동 참가</div>`:`<input class="ninput" maxlength="8" placeholder="${p.name}" value="${p._custom||''}">`)+`</div>`;
+    list.appendChild(row);
+  });
+  $('#lobby').classList.add('hidden'); $('#names').classList.remove('hidden');
+}
+$('#namesBack').onclick=()=>{ $('#names').classList.add('hidden'); $('#lobby').classList.remove('hidden'); };
+$('#namesGo').onclick=()=>{ initAudio();
+  $$('#nameList .ninput').forEach((inp,i)=>{ const v=inp.value.trim(); if(v){ PLAYERS[i].name=v; PLAYERS[i]._custom=v; } });
+  $('#names').classList.add('hidden'); startTournament();
+};
 
 function startTournament(){
   state.coins=[1000,1000,1000,1000]; state.round=0; state.history=[];
