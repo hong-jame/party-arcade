@@ -6,6 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>4인 파티 아케이드 · 코인 토너먼트</title>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
@@ -164,6 +165,8 @@
   .modecard:active{transform:scale(.97)} .modecard:hover{border-color:var(--gold)}
   .modecard .mc-emoji{font-size:34px} .modecard .mc-title{font-weight:850;font-size:1.15rem;margin:8px 0 6px}
   .modecard .mc-desc{color:var(--dim);font-size:.9rem;line-height:1.55}
+  .qrbox{display:flex;justify-content:center;margin:6px 0 2px;min-height:20px}
+  .qrbox svg{width:190px;height:190px;background:#fff;border-radius:12px;padding:9px;box-shadow:0 6px 20px -8px rgba(0,0,0,.5)}
   .roomcode{font-family:ui-monospace,monospace;font-weight:850;font-size:clamp(2.6rem,11vw,4.4rem);letter-spacing:.18em;color:var(--gold);background:var(--surface);border:2px dashed var(--gold);border-radius:16px;padding:10px 26px;margin:6px 0}
   .joinurl{color:var(--faint);font-size:13px;margin-bottom:8px}
   .slots{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:8px 0 4px;min-height:44px}
@@ -224,7 +227,8 @@
     </div>
 
     <div id="hostLobby" class="hidden">
-      <p class="sub">아래 <b>방 코드</b>를 참가자에게 알려주세요. 폰에서 이 사이트 열고 "방 참가"에 입력!</p>
+      <p class="sub">📷 참가자는 <b>폰 카메라로 QR을 찍으면</b> 코드 없이 바로 입장! 안 되면 아래 <b>숫자 코드</b>를 "방 참가"에 넣어요.</p>
+      <div id="qrBox" class="qrbox"></div>
       <div class="roomcode" id="roomCodeBox">----</div>
       <div class="joinurl" id="joinUrl"></div>
       <div class="slots" id="hostSlots"></div>
@@ -239,7 +243,7 @@
     <div id="joinForm" class="hidden">
       <p class="sub">방장이 알려준 <b>방 코드</b>와 <b>내 이름</b>을 넣어요.</p>
       <div class="joinfields">
-        <input id="joinCode" maxlength="4" placeholder="방 코드 (예: ABCD)" style="text-transform:uppercase">
+        <input id="joinCode" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="방 코드 (숫자 4자리)">
         <input id="joinName" maxlength="8" placeholder="내 이름">
       </div>
       <button class="btn" id="joinGoBtn" style="margin-top:14px">입장하기</button>
@@ -1209,7 +1213,9 @@ function PeerTransport(code, asHost){
   return api;
 }
 function makeTransport(code,asHost){ return TRANSPORT==='peer' ? PeerTransport(code,asHost) : TRANSPORT==='local' ? LocalTransport(code) : FirebaseTransport(code,FIREBASE_CONFIG); }
-function makeCode(){ const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<4;i++)s+=A[Math.floor(rand()*A.length)]; return s; }
+function makeCode(){ let s=''; for(let i=0;i<4;i++)s+=Math.floor(rand()*10); return s; }   // 숫자 4자리
+function renderQR(url){ const box=$('#qrBox'); if(!box)return; if(typeof qrcode==='undefined'){ box.innerHTML=''; return; }
+  try{ const qr=qrcode(0,'M'); qr.addData(url); qr.make(); box.innerHTML=qr.createSvgTag({cellSize:5,margin:1,scalable:true}); }catch(e){ box.innerHTML=''; } }
 
 /* ---- screen routing ---- */
 const show=id=>{ ['modeSelect','online','ctrl','lobby','names','result','final'].forEach(s=>$('#'+s)&&$('#'+s).classList.toggle('hidden',s!==id)); };
@@ -1238,6 +1244,8 @@ function hostCreate(){
 }
 function startHostRoom(){
   roomCode=makeCode(); $('#roomCodeBox').textContent=roomCode;
+  const joinURL=location.origin+location.pathname.replace(/index\.html$/,'')+'?room='+roomCode;
+  $('#joinUrl').textContent='또는 링크: '+joinURL.replace(/^https?:\/\//,''); renderQR(joinURL);
   try{ net=makeTransport(roomCode,true); }catch(e){ alert('연결 실패: '+e.message); return; }
   const wire=()=>{
     net.write('phase','lobby'); net.write('status','참가 대기 중'); renderHostSlots();
@@ -1328,6 +1336,12 @@ function becomeController(pid,name){
   const end=e=>{ if(dragging){ dragging=false; rel('up',e); } };
   mir.addEventListener('pointerup',end); mir.addEventListener('pointercancel',end); mir.addEventListener('pointerleave',end);
 }
+
+/* QR/링크로 열면(?room=NNNN) 코드 입력 없이 바로 참가 화면으로 */
+(function(){ const room=new URLSearchParams(location.search).get('room');
+  if(room){ show('online'); $('#onlineChoose').classList.add('hidden'); $('#joinForm').classList.remove('hidden');
+    $('#joinCode').value=room.replace(/[^0-9A-Za-z]/g,''); setTimeout(()=>$('#joinName').focus(),100); }
+})();
 </script>
 </body>
 </html>
