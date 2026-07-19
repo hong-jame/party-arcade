@@ -1393,7 +1393,7 @@ const gDodge={ title:'메테오 대시', format:'ffa', selfAI:true, lowerBetter:
     if(aliveN<=(st.length>1?1:0)||el>DUR) finish();
   });
   setTimeout(()=>finish(), DUR+2500);
-  function finish(){ if(done)return; done=true; stop(); ac.abort(); const m={}; st.forEach(s=>{ m[s.p.id]= s.kills*100 + (s.alive?4000:0) + Math.round((s.alive?el:s.deadAt)/100); }); resolve(m); }
+  function finish(){ if(done)return; done=true; stop(); ac.abort(); const now=performance.now()-t0; const m={}; st.forEach(s=>{ m[s.p.id]= s.kills*100 + (s.alive?4000:0) + Math.round((s.alive?now:s.deadAt)/100); }); resolve(m); }
 });}};
 
 /* ② 비트 러시 — 4레인 피아노. 노트가 건반에 닿을 때 탭(두 손가락!), 레인마다 음이 울림 */
