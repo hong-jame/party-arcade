@@ -7,6 +7,7 @@
 <title>4인 파티 아케이드 · 코인 토너먼트</title>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
@@ -1160,7 +1161,7 @@ GAMES=[ gameMadTap,gameReaction,gameStop,gameNumberOrder,colorReact,balloon,mine
 /* ============================================================
    ONLINE MULTIPLAYER  (host screen + phone controllers)
    ============================================================ */
-TRANSPORT = FIREBASE_CONFIG ? 'firebase' : (typeof Peer!=='undefined' ? 'peer' : 'local');
+TRANSPORT = FIREBASE_CONFIG ? 'firebase' : (typeof mqtt!=='undefined' ? 'mqtt' : (typeof Peer!=='undefined' ? 'peer' : 'local'));
 
 /* ---- transports (same tiny interface: write(path,val) / watch(path,cb)) ---- */
 function LocalTransport(code){
@@ -1231,7 +1232,38 @@ function PeerTransport(code, asHost){
   else { peer.on('open', ()=>connectHost()); }
   return api;
 }
-function makeTransport(code,asHost){ return TRANSPORT==='peer' ? PeerTransport(code,asHost) : TRANSPORT==='local' ? LocalTransport(code) : FirebaseTransport(code,FIREBASE_CONFIG); }
+// 서버 중계: 공용 MQTT 브로커 경유 (P2P 아님 → AP격리·NAT 무관, 계정·설정 불필요)
+function MqttTransport(code, asHost){
+  const tree={}, subs=[];
+  const get=path=>path.split('/').filter(Boolean).reduce((o,k)=>o&&o[k],tree);
+  const setP=(path,val)=>{ const ks=path.split('/').filter(Boolean); let o=tree; for(let i=0;i<ks.length-1;i++){ o[ks[i]]=o[ks[i]]||{}; o=o[ks[i]]; } o[ks[ks.length-1]]=val; };
+  const notify=path=>subs.forEach(s=>{ if(path===s.path||path.startsWith(s.path+'/')||s.path.startsWith(path+'/')) s.cb(get(s.path)); });
+  const base='partyArcadeHJ/'+code+'/';
+  const brokers=['wss://broker.emqx.io:8084/mqtt','wss://broker.hivemq.com:8884/mqtt'];
+  let client, ready=false, closed=false, bi=0; const queue=[];
+  const api={ kind:'mqtt', code, onReady:null, onError:null, onStatus:null,
+    write(path,val){ setP(path,val); notify(path); const t=base+path, m=JSON.stringify({v:val});
+      if(ready&&client&&client.connected) client.publish(t,m,{retain:true}); else queue.push([t,m]); },
+    watch(path,cb){ subs.push({path,cb}); const v=get(path); if(v!==undefined)cb(v); },
+    close(){ closed=true; try{ client&&client.end(true); }catch(e){} } };
+  function connect(){ if(closed)return; const url=brokers[bi%brokers.length]; api.onStatus&&api.onStatus('서버 연결 '+(bi+1));
+    try{ client=mqtt.connect(url,{clientId:'pa_'+Math.floor(rand()*1e9),clean:true,connectTimeout:7000,reconnectPeriod:0,keepalive:30}); }
+    catch(e){ return bump(); }
+    client.on('connect',()=>{ ready=true; client.subscribe(base+'#',{qos:0}); queue.forEach(([t,m])=>client.publish(t,m,{retain:true})); queue.length=0; api.onReady&&api.onReady(); });
+    client.on('message',(topic,payload)=>{ if(topic.indexOf(base)!==0)return; const path=topic.slice(base.length); let val; try{ val=JSON.parse(payload.toString()).v; }catch(e){ return; } setP(path,val); notify(path); });
+    client.on('error',()=>{ try{ client.end(true); }catch(e){} });
+    client.on('close',()=>{ if(!ready&&!closed) bump(); });
+  }
+  function bump(){ if(closed||ready)return; bi++; if(bi<=3) setTimeout(connect,700); else api.onError&&api.onError({type:'give-up'}); }
+  connect();
+  return api;
+}
+function makeTransport(code,asHost){
+  return TRANSPORT==='mqtt' ? MqttTransport(code,asHost)
+       : TRANSPORT==='peer' ? PeerTransport(code,asHost)
+       : TRANSPORT==='local' ? LocalTransport(code)
+       : FirebaseTransport(code,FIREBASE_CONFIG);
+}
 function makeCode(){ let s=''; for(let i=0;i<4;i++)s+=Math.floor(rand()*10); return s; }   // 숫자 4자리
 function renderQR(url){ const box=$('#qrBox'); if(!box)return; if(typeof qrcode==='undefined'){ box.innerHTML=''; return; }
   try{ const qr=qrcode(0,'M'); qr.addData(url); qr.make(); box.innerHTML=qr.createSvgTag({cellSize:5,margin:1,scalable:true}); }catch(e){ box.innerHTML=''; } }
@@ -1241,10 +1273,10 @@ const show=id=>{ ['modeSelect','online','ctrl','lobby','names','result','final']
 $('#modeOffline').onclick=()=>{ initAudio(); ONLINE=false; show('lobby'); };
 $('#modeOnline').onclick=()=>{ initAudio(); show('online');
   $('#onlineChoose').classList.remove('hidden'); $('#hostLobby').classList.add('hidden'); $('#joinForm').classList.add('hidden');
-  const ns=$('#netStatus'); ns.innerHTML = TRANSPORT==='firebase'
-    ? '🌐 <b>온라인 연결(Firebase)</b>: 서로 다른 폰·데이터망에서도 잘 됩니다.'
-    : TRANSPORT==='peer'
-    ? '🌐 <b>방 코드만으로 바로 연결!</b> 설정·계정 필요 없어요. <b>같은 와이파이</b>에서 가장 잘 되고, 일부 통신망(회사·학교 등)에선 가끔 연결이 안 될 수 있어요.'
+  const ns=$('#netStatus'); ns.innerHTML =
+      TRANSPORT==='mqtt' ? '🌐 <b>서버 중계 방식</b>: 방 코드/QR만으로 연결(설정·계정 0). <b>서로 다른 폰·데이터망(4G/5G)에서도</b> 됩니다 — 같은 와이파이가 아니어도 OK!'
+    : TRANSPORT==='firebase' ? '🌐 <b>온라인 연결(Firebase)</b>: 서로 다른 폰·데이터망에서도 잘 됩니다.'
+    : TRANSPORT==='peer' ? '🌐 <b>방 코드만으로 바로 연결!</b> <b>같은 와이파이</b>에서 가장 잘 됩니다.'
     : '🧪 <b>테스트 모드</b>: 연결 라이브러리를 못 불러와 <b>같은 브라우저 탭</b>끼리만 됩니다(인터넷 확인).';
 };
 $('#onlineBack').onclick=()=>show('modeSelect');
@@ -1277,8 +1309,9 @@ function startHostRoom(){
     });
     for(let pid=0;pid<4;pid++){ (p=>net.watch('in'+p,inp=>{ if(ONLINE&&isHost&&inp&&inp.seq!==lastSeq[p]){ lastSeq[p]=inp.seq; applyRemoteInput(p,inp); } }))(pid); }
   };
-  if(net.kind==='peer'){ $('#hostConnStatus').innerHTML='🟡 방 여는 중…';
-    net.onReady=()=>{ $('#hostConnStatus').innerHTML='🟢 방 열림 — 이제 참가할 수 있어요'; wire(); };
+  if(net.kind==='peer'||net.kind==='mqtt'){ $('#hostConnStatus').innerHTML='🟡 방 여는 중…';
+    net.onStatus=s=>{ if(!net._ok)$('#hostConnStatus').innerHTML='🟡 방 여는 중… <span style="color:var(--faint)">('+s+')</span>'; };
+    net.onReady=()=>{ net._ok=true; $('#hostConnStatus').innerHTML='🟢 방 열림 — 이제 참가할 수 있어요'; wire(); };
     net.onError=e=>{ if(e&&e.type==='unavailable-id'){ startHostRoom(); } else { $('#hostConnStatus').innerHTML='<span style="color:var(--bad)">⚠️ 연결 서버 문제 — 새로고침 후 다시 시도</span>'; } }; }
   else { $('#hostConnStatus').innerHTML='🟢 방 열림'; wire(); }
 }
@@ -1306,7 +1339,7 @@ function setupMirrors(){
     const qi=quadInner(p); let last=''; let pending=false;
     const push=()=>{ const html=qi.innerHTML; if(html===last)return; last=html;
       const r=qi.getBoundingClientRect(); net.write('mirror'+p,{html,aspect:(r.width/r.height)||1}); };
-    const throttled=()=>{ if(pending)return; pending=true; setTimeout(()=>{ pending=false; push(); },130); };
+    const throttled=()=>{ if(pending)return; pending=true; setTimeout(()=>{ pending=false; push(); },200); };
     const ob=new MutationObserver(throttled); ob.observe(qi,{subtree:true,childList:true,attributes:true,characterData:true});
     mirrorObs.push(ob); push();
   })(pid); }
@@ -1330,7 +1363,7 @@ $('#joinGoBtn').onclick=()=>{ initAudio();
   const doJoin=()=>{ net.write('players/'+myCid,{name,pid:null});
     net.watch('players/'+myCid+'/pid',pid=>{ if(pid!=null && myPid==null) becomeController(pid,name); });
     js.innerHTML='✅ 연결됨! 방장이 시작하면 자동으로 넘어가요.'; };
-  if(net.kind==='peer'){ let ok=false;
+  if(net.kind==='peer'||net.kind==='mqtt'){ let ok=false;
     net.onStatus=s=>{ if(!ok) js.innerHTML='🔗 <b>'+code+'</b> 연결 중… <span style="color:var(--faint)">('+s+')</span>'; };
     net.onReady=()=>{ ok=true; doJoin(); };
     net.onError=e=>{ if(ok)return; const t=e&&e.type;
