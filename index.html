@@ -214,6 +214,9 @@
   .cp-betact .btn{font-size:1.1rem;padding:16px}
   .cp-note{color:var(--good);font-weight:800;min-height:22px}
   .cpanel button:disabled{opacity:.55}
+  .crows{display:flex;flex-direction:column;gap:7px;width:100%;margin:6px 0 4px}
+  .crow{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:11px 14px;font-weight:750;font-size:15px}
+  .crow span:nth-child(2){color:var(--dim);font-weight:600}
   .revealbeat{text-align:center;animation:pop2 .35s ease}
   .revealbeat .rb-title{font-size:clamp(2rem,8vw,3.4rem);font-weight:850;color:var(--gold);text-shadow:0 8px 40px rgba(0,0,0,.55);text-wrap:balance;max-width:14ch}
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -266,6 +269,7 @@
       <div class="roomcode" id="roomCodeBox">----</div>
       <div class="joinurl" id="joinUrl"></div>
       <div class="joinurl" id="hostConnStatus" style="font-weight:700"></div>
+      <div class="joinfields" style="max-width:280px;margin:8px auto"><input id="hostName" maxlength="8" placeholder="내 이름 (방장도 같이 플레이!)"></div>
       <div class="slots" id="hostSlots"></div>
       <div class="opts" style="margin:18px 0 8px">
         <div class="opt"><div class="lbl">라운드 수</div><div class="seg" id="segRounds2"><button data-v="3">3</button><button data-v="6">6</button><button data-v="9" class="on">9</button><button data-v="12">12</button></div></div>
@@ -1334,10 +1338,17 @@ const bombPass={ title:'폭탄 사수', format:'3v1', soloName:'폭탄마 — �
 const PCOLOR=['#ff6a63','#4aa3e6','#20c39a','#a17bf0'];
 // 인터벌 기반 루프: 실기기 포그라운드에선 ~60fps로 부드럽게, 백그라운드에서도 멈추지 않아 게임이 안 끝나는 일 없음
 function loopRAF(fn){ let last=performance.now(); const id=setInterval(()=>{ const t=performance.now(); const dt=Math.min(48,t-last); last=t; try{ fn(dt,t); }catch(e){} },1000/60); return ()=>clearInterval(id); }
-function mkCanvases(){ return PLAYERS.map(p=>{ const q=quadInner(p.id); q.innerHTML=''; q.style.padding='0'; const cv=document.createElement('canvas');
-  const r=q.getBoundingClientRect(); const W=Math.max(220,Math.round(r.width||320)), H=Math.max(220,Math.round(r.height||320));
-  cv.width=W; cv.height=H; cv.style.cssText='width:100%;height:100%;display:block;touch-action:none'; q.appendChild(cv);
-  return {p, q, cv, ctx:cv.getContext('2d'), W, H}; }); }
+// seats=렌더/시뮬할 pid 목록. fullEl 있으면 그 요소에 전체화면 캔버스 1개(온라인·한 명), 없으면 각 사분면(오프라인)
+function mkCanvasesFor(seats, fullEl){
+  if(fullEl){ fullEl.innerHTML=''; fullEl.style.padding='0'; const cv=document.createElement('canvas'); const r=fullEl.getBoundingClientRect();
+    const W=Math.max(240,Math.round(r.width||340)), H=Math.max(320,Math.round(r.height||520));
+    cv.width=W; cv.height=H; cv.style.cssText='width:100%;height:100%;display:block;touch-action:none'; fullEl.appendChild(cv);
+    return seats.map(pid=>({p:PLAYERS[pid], el:fullEl, cv, ctx:cv.getContext('2d'), W, H})); }
+  return seats.map(pid=>{ const q=quadInner(pid); q.innerHTML=''; q.style.padding='0'; const cv=document.createElement('canvas');
+    const r=q.getBoundingClientRect(); const W=Math.max(220,Math.round(r.width||320)), H=Math.max(220,Math.round(r.height||320));
+    cv.width=W; cv.height=H; cv.style.cssText='width:100%;height:100%;display:block;touch-action:none'; q.appendChild(cv);
+    return {p:PLAYERS[pid], el:q.parentElement, cv, ctx:cv.getContext('2d'), W, H}; });
+}
 function Particles(){ const a=[]; return {
   burst(x,y,n,color,spd){ for(let i=0;i<n;i++){ const ang=rand()*6.283,s=spd*(0.3+rand()); a.push({x,y,vx:Math.cos(ang)*s,vy:Math.sin(ang)*s,life:1,color,r:2+rand()*3}); } },
   up(dt){ const k=dt/16; for(let i=a.length-1;i>=0;i--){ const q=a[i]; q.x+=q.vx*k; q.y+=q.vy*k; q.vy+=0.18*k; q.life-=0.022*k; if(q.life<=0)a.splice(i,1); } },
@@ -1345,12 +1356,14 @@ function Particles(){ const a=[]; return {
 function nameTag(ctx,s){ ctx.globalAlpha=.8; ctx.fillStyle=s.color; ctx.textAlign='left'; ctx.font='bold 13px sans-serif'; ctx.fillText((isAI(s.p.id)?'🤖 ':'')+s.p.name,8,16); ctx.globalAlpha=1; ctx.textAlign='center'; }
 
 /* ① 메테오 대시 — 좌우로 움직여 운석 피하기, 오래 살아남기 */
-const gDodge={ title:'메테오 대시', format:'ffa', selfAI:true, lowerBetter:false, play(){ return new Promise(resolve=>{
-  clearQuads(); const cs=mkCanvases(); const ac=new AbortController(); let done=false; const t0=performance.now(); const DUR=28000;
-  const st=cs.map((c,i)=>({ ...c, x:c.W/2, tx:c.W/2, alive:true, deadAt:0, meteors:[], stars:Array.from({length:24},()=>({x:rand()*c.W,y:rand()*c.H,s:rand()*2+.5})), parts:Particles(), shake:0, spawnT:500, color:PCOLOR[i] }));
+const gDodge={ title:'메테오 대시', format:'ffa', selfAI:true, lowerBetter:false,
+  play(){ return this.run([0,1,2,3],null).then(m=>[0,1,2,3].map(i=>m[i]??0)); },
+  run(seats,fullEl){ return new Promise(resolve=>{
+  if(!fullEl)clearQuads(); const cs=mkCanvasesFor(seats,fullEl); const ac=new AbortController(); let done=false; const t0=performance.now(); const DUR=28000;
+  const st=cs.map((c)=>({ ...c, x:c.W/2, tx:c.W/2, alive:true, deadAt:0, meteors:[], stars:Array.from({length:24},()=>({x:rand()*c.W,y:rand()*c.H,s:rand()*2+.5})), parts:Particles(), shake:0, spawnT:500, color:PCOLOR[c.p.id] }));
   st.forEach(s=>{ if(isAI(s.p.id))return; const mv=e=>{ const r=s.cv.getBoundingClientRect(); s.tx=clamp((e.clientX-r.left)/r.width*s.W,14,s.W-14); };
-    s.q.parentElement.addEventListener('pointerdown',mv,{signal:ac.signal});
-    s.q.parentElement.addEventListener('pointermove',e=>{ if(e.buttons||e.pressure>0)mv(e); },{signal:ac.signal}); });
+    s.el.addEventListener('pointerdown',mv,{signal:ac.signal});
+    s.el.addEventListener('pointermove',e=>{ if(e.buttons||e.pressure>0)mv(e); },{signal:ac.signal}); });
   const stop=loopRAF((dt,t)=>{ const el=t-t0, diff=1+el/8000, k=dt/16;
     st.forEach(s=>{ const ctx=s.ctx; ctx.save(); if(s.shake>0.3){ ctx.translate((rand()-.5)*s.shake,(rand()-.5)*s.shake); s.shake*=0.88; }
       ctx.fillStyle='#120c18'; ctx.fillRect(-30,-30,s.W+60,s.H+60);
@@ -1372,20 +1385,22 @@ const gDodge={ title:'메테오 대시', format:'ffa', selfAI:true, lowerBetter:
       s.parts.up(dt); s.parts.draw(ctx); nameTag(ctx,s); ctx.restore();
     });
     const aliveN=st.filter(s=>s.alive).length;
-    if((st.length>1&&aliveN<=1)||el>DUR) finish();
+    if(aliveN<=(st.length>1?1:0)||el>DUR) finish();
   });
   setTimeout(()=>finish(), DUR+2500);   // 안전장치: 루프가 멈춰도 반드시 끝남
-  function finish(){ if(done)return; done=true; stop(); ac.abort(); resolve(st.map(s=> s.alive? Math.round(performance.now()-t0)+5000 : Math.round(s.deadAt))); }
+  function finish(){ if(done)return; done=true; stop(); ac.abort(); const m={}; st.forEach(s=>{ m[s.p.id]= s.alive? Math.round(performance.now()-t0)+5000 : Math.round(s.deadAt); }); resolve(m); }
 });}};
 
 /* ② 비트 러시 — 선에 닿을 때 탭! PERFECT+콤보 */
-const gRhythm={ title:'비트 러시', format:'ffa', selfAI:true, lowerBetter:false, play(){ return new Promise(resolve=>{
-  clearQuads(); const cs=mkCanvases(); const ac=new AbortController(); let done=false; const t0=performance.now(); const DUR=22000; const HITY=0.78;
-  const st=cs.map((c,i)=>({ ...c, notes:[], score:0, combo:0, parts:Particles(), color:PCOLOR[i], flash:0, judge:'', judgeT:0, spawnT:700+i*90 }));
+const gRhythm={ title:'비트 러시', format:'ffa', selfAI:true, lowerBetter:false,
+  play(){ return this.run([0,1,2,3],null).then(m=>[0,1,2,3].map(i=>m[i]??0)); },
+  run(seats,fullEl){ return new Promise(resolve=>{
+  if(!fullEl)clearQuads(); const cs=mkCanvasesFor(seats,fullEl); const ac=new AbortController(); let done=false; const t0=performance.now(); const DUR=22000; const HITY=0.78;
+  const st=cs.map((c,i)=>({ ...c, notes:[], score:0, combo:0, parts:Particles(), color:PCOLOR[c.p.id], flash:0, judge:'', judgeT:0, spawnT:700+i*90 }));
   function tap(s){ if(done)return; const line=s.H*HITY; let best=null,bd=1e9; s.notes.forEach(n=>{ if(!n.hit){ const d=Math.abs(n.y-line); if(d<bd){bd=d;best=n;} } });
     if(best&&bd<66){ best.hit=true; const perfect=bd<20; s.combo++; s.score+=(perfect?100:55)+s.combo*5; s.parts.burst(best.x,line,perfect?22:11,perfect?'#e8b64a':s.color,perfect?6:4); s.flash=perfect?1:.5; s.judge=perfect?'PERFECT!':'GOOD'; s.judgeT=1; (perfect?sfx.good:sfx.tick)(); buzz(15); }
     else { s.combo=0; s.judge='MISS'; s.judgeT=1; sfx.bad(); } }
-  st.forEach(s=>{ if(isAI(s.p.id))return; s.q.parentElement.addEventListener('pointerdown',()=>tap(s),{signal:ac.signal}); });
+  st.forEach(s=>{ if(isAI(s.p.id))return; s.el.addEventListener('pointerdown',()=>tap(s),{signal:ac.signal}); });
   const stop=loopRAF((dt,t)=>{ const el=t-t0, spd=1.8+el/11000, k=dt/16;
     st.forEach(s=>{ const ctx=s.ctx, line=s.H*HITY;
       ctx.fillStyle='#100c16'; ctx.fillRect(0,0,s.W,s.H);
@@ -1406,20 +1421,22 @@ const gRhythm={ title:'비트 러시', format:'ffa', selfAI:true, lowerBetter:fa
     if(el>DUR) finish();
   });
   setTimeout(()=>finish(), DUR+2500);
-  function finish(){ if(done)return; done=true; stop(); ac.abort(); resolve(st.map(s=>s.score)); }
+  function finish(){ if(done)return; done=true; stop(); ac.abort(); const m={}; st.forEach(s=>m[s.p.id]=s.score); resolve(m); }
 });}};
 
 /* ③ 스택 타워 — 움직이는 블록을 탭해서 정확히 쌓기 */
-const gStack={ title:'스택 타워', format:'ffa', selfAI:true, lowerBetter:false, play(){ return new Promise(resolve=>{
-  clearQuads(); const cs=mkCanvases(); const ac=new AbortController(); let done=false; const t0=performance.now(); const DUR=26000; const BH=24;
-  const st=cs.map((c,i)=>({ ...c, blocks:[{x:c.W/2-44,w:88}], curX:0, curW:88, dir:1, spd:2.4, alive:true, height:1, parts:Particles(), color:PCOLOR[i], flash:0, camY:0 }));
+const gStack={ title:'스택 타워', format:'ffa', selfAI:true, lowerBetter:false,
+  play(){ return this.run([0,1,2,3],null).then(m=>[0,1,2,3].map(i=>m[i]??0)); },
+  run(seats,fullEl){ return new Promise(resolve=>{
+  if(!fullEl)clearQuads(); const cs=mkCanvasesFor(seats,fullEl); const ac=new AbortController(); let done=false; const t0=performance.now(); const DUR=26000; const BH=24;
+  const st=cs.map((c)=>({ ...c, blocks:[{x:c.W/2-44,w:88}], curX:0, curW:88, dir:1, spd:2.4, alive:true, height:1, parts:Particles(), color:PCOLOR[c.p.id], flash:0, camY:0 }));
   function drop(s){ if(!s.alive||done)return; const prev=s.blocks[s.blocks.length-1]; const L=Math.max(prev.x,s.curX), R=Math.min(prev.x+prev.w,s.curX+s.curW), ov=R-L;
     const yTop=s.H-40-s.height*BH+s.camY;
     if(ov<=2){ s.alive=false; s.parts.burst(s.curX+s.curW/2,yTop,32,s.color,7); sfx.bad(); buzz(70); return; }
     const perfect=Math.abs(s.curX-prev.x)<7; const nb={x:L,w:perfect?prev.w:ov};
     if(perfect){ s.flash=1; s.parts.burst(L+nb.w/2,yTop,18,'#e8b64a',5); sfx.good(); buzz(25); } else { s.parts.burst(s.curX<prev.x?L:R,yTop,8,'#888',4); sfx.tick(); buzz(15); }
     s.blocks.push(nb); s.height++; s.curW=nb.w; s.spd=Math.min(6,s.spd+0.14); s.dir=rand()<.5?1:-1; s.curX=s.dir>0?0:s.W-s.curW; }
-  st.forEach(s=>{ if(isAI(s.p.id))return; s.q.parentElement.addEventListener('pointerdown',()=>drop(s),{signal:ac.signal}); });
+  st.forEach(s=>{ if(isAI(s.p.id))return; s.el.addEventListener('pointerdown',()=>drop(s),{signal:ac.signal}); });
   const stop=loopRAF((dt,t)=>{ const el=t-t0, k=dt/16;
     st.forEach(s=>{ const ctx=s.ctx; const targetCam=Math.max(0,(s.height-5)*BH); s.camY+=(targetCam-s.camY)*0.12;
       ctx.fillStyle='#0e0c13'; ctx.fillRect(0,0,s.W,s.H);
@@ -1436,7 +1453,7 @@ const gStack={ title:'스택 타워', format:'ffa', selfAI:true, lowerBetter:fal
     if(st.every(s=>!s.alive)||el>DUR) finish();
   });
   setTimeout(()=>finish(), DUR+2500);
-  function finish(){ if(done)return; done=true; stop(); ac.abort(); resolve(st.map(s=>s.height-1)); }
+  function finish(){ if(done)return; done=true; stop(); ac.abort(); const m={}; st.forEach(s=>m[s.p.id]=s.height-1); resolve(m); }
 });}};
 
 HOW['메테오 대시']='손가락을 좌우로 움직여 떨어지는 운석을 피하세요! 오래 버틸수록 승. 점점 빨라져요. (마지막 생존자 보너스)';
@@ -1594,8 +1611,8 @@ function startHostRoom(){
     net.write('phase','lobby'); net.write('status','참가 대기 중'); renderHostSlots();
     net.watch('players',obj=>{ if(!obj)return;
       Object.keys(obj).forEach(cid=>{ const p=obj[cid];
-        if(p&&(p.pid===null||p.pid===undefined)&&!joined.find(j=>j.cid===cid)&&joined.length<4){
-          const pid=joined.length; joined.push({cid,name:p.name||('P'+(pid+1)),pid});
+        if(p&&(p.pid===null||p.pid===undefined)&&!joined.find(j=>j.cid===cid)&&joined.length<3){
+          const pid=1+joined.length; joined.push({cid,name:p.name||('P'+(pid+1)),pid});   // host=0, 참가자=1~3
           net.write('players/'+cid+'/pid',pid); renderHostSlots();
         }});
     });
@@ -1608,14 +1625,15 @@ function startHostRoom(){
   else { $('#hostConnStatus').innerHTML='🟢 방 열림'; wire(); }
 }
 function renderHostSlots(){
-  const box=$('#hostSlots'); box.innerHTML='';
-  for(let i=0;i<4;i++){ const j=joined.find(x=>x.pid===i); const p=PLAYERS[i];
-    const el=document.createElement('div'); el.className='slot'+(j?'':' empty'); el.style.setProperty('--pc',p.color);
-    el.innerHTML=j?`${p.emoji} ${j.name}`:`${p.emoji} <span style="color:var(--faint)">빈 자리 → 🤖 AI</span>`;
-    box.appendChild(el);
+  const box=$('#hostSlots'); if(!box)return; box.innerHTML='';
+  const hn=(($('#hostName')&&$('#hostName').value)||'').trim()||'방장';
+  for(let i=0;i<4;i++){ const p=PLAYERS[i]; let label,filled;
+    if(i===0){ label=`${p.emoji} ${hn} <span style="color:var(--gold)">(나·방장)</span>`; filled=true; }
+    else { const j=joined.find(x=>x.pid===i); filled=!!j; label=j?`${p.emoji} ${j.name}`:`${p.emoji} <span style="color:var(--faint)">빈 자리 → 🤖 AI</span>`; }
+    const el=document.createElement('div'); el.className='slot'+(filled?'':' empty'); el.style.setProperty('--pc',p.color); el.innerHTML=label; box.appendChild(el);
   }
 }
-$('#hostStartBtn').onclick=hostStart;
+$('#hostStartBtn').onclick=hostCoopStart;
 function hostStart(){
   joined.forEach(j=>{ PLAYERS[j.pid].name=j.name; PLAYERS[j.pid]._custom=j.name; });
   state.humans=joined.length;                 // remaining slots become AI
@@ -1653,7 +1671,7 @@ $('#joinGoBtn').onclick=()=>{ initAudio();
   myCid='c'+Math.floor(rand()*1e9);
   const js=$('#joinStatus'); js.style.display='block'; js.innerHTML='🔗 <b>'+code+'</b> 방에 연결 중…';
   const doJoin=()=>{ net.write('players/'+myCid,{name,pid:null});
-    net.watch('players/'+myCid+'/pid',pid=>{ if(pid!=null && myPid==null) becomeController(pid,name); });
+    net.watch('players/'+myCid+'/pid',pid=>{ if(pid!=null && myPid==null) becomePlayer(pid,name); });
     js.innerHTML='✅ 연결됨! 방장이 시작하면 자동으로 넘어가요.'; };
   if(net.kind==='peer'||net.kind==='mqtt'){ let ok=false;
     net.onStatus=s=>{ if(!ok) js.innerHTML='🔗 <b>'+code+'</b> 연결 중… <span style="color:var(--faint)">('+s+')</span>'; };
@@ -1719,6 +1737,91 @@ function renderBetPanel(){ const g=ctrlGame||{}; const bal=(ctrlCoins&&ctrlCoins
     $('#cBetReady').textContent='✅ 완료!'; $('#cBetReady').disabled=true; $('#cAllin').disabled=true;
     $$('#ctrlPanel .cp-steppers button').forEach(b=>b.disabled=true); $('#cBetNote').textContent='다른 사람들을 기다리는 중…'; };
 }
+
+/* ===== 온라인 co-play: 모두(방장 포함) 자기 기기에서 직접 게임, 점수만 동기화 ===== */
+let curRG=null, lastRes=null, lastFinal=null, ranRound=-1, gameRunning=false;
+function becomePlayer(pid,name){
+  myPid=pid; show('ctrl'); PLAYERS[pid].name=name||PLAYERS[pid].name;
+  $('#ctrlName').textContent=PLAYERS[pid].emoji+' '+PLAYERS[pid].name+(pid===0?' (방장)':'');
+  $('#ctrlHint').textContent='';
+  net.watch('names',arr=>{ if(arr)arr.forEach((n,i)=>{ if(n)PLAYERS[i].name=n; }); });
+  net.watch('coins',c=>{ if(c)state.coins=c.slice(); });
+  net.watch('rgame',g=>{ curRG=g; if(cPhase==='intro')renderCoopIntro(); });
+  net.watch('roundres',r=>{ lastRes=r; if(cPhase==='result')renderCoopResult(); });
+  net.watch('final',f=>{ lastFinal=f; if(cPhase==='final')renderCoopFinal(); });
+  net.watch('phase',ph=>onCoopPhase(ph));
+}
+let cPhase='';
+function onCoopPhase(ph){ cPhase=ph; const panel=$('#ctrlPanel'), area=$('#ctrlMirror');
+  if(ph==='play'){ panel.classList.add('hidden'); area.classList.remove('hidden'); runMyGame(); return; }
+  area.classList.add('hidden'); panel.classList.remove('hidden');
+  if(ph==='intro') renderCoopIntro();
+  else if(ph==='countdown') panel.innerHTML='<div class="cpanel"><div class="cp-title">곧 시작!</div><div class="cp-note" style="color:var(--dim)">준비하세요 ✊</div></div>';
+  else if(ph==='result') renderCoopResult();
+  else if(ph==='final') renderCoopFinal();
+  else panel.innerHTML='<div class="cpanel"><div class="waiting">대기 중…</div></div>';
+}
+function renderCoopIntro(){ const g=curRG||{};
+  $('#ctrlPanel').innerHTML='<div class="cpanel"><div class="cp-round">게임 '+(g.round||'')+' / '+(g.total||'')+'</div><div class="cp-title">'+(g.title||'')+'</div><div class="cp-how">'+(g.how||'')+'</div><button class="btn cp-ready" id="cReady">준비 완료 ✓</button><div class="cp-note" id="cRN"></div></div>';
+  $('#cReady').onclick=()=>{ initAudio(); sfx.tick(); net.write('ready/R'+g.round+'/'+myPid,true); const b=$('#cReady'); b.textContent='✅ 준비됨!'; b.disabled=true; $('#cRN').textContent='다른 사람 기다리는 중…'; };
+}
+async function runMyGame(){ const g=curRG; if(!g||ranRound===g.round||gameRunning)return; ranRound=g.round; gameRunning=true;
+  const game=GAMES.find(x=>x.title===g.title)||GAMES[0]; const area=$('#ctrlMirror');
+  let scores={}; try{ scores=await game.run([myPid],area); }catch(e){ scores[myPid]=0; }
+  gameRunning=false; const sc=scores[myPid]??0;
+  net.write('score/R'+g.round+'/'+myPid, sc);
+  area.classList.add('hidden'); $('#ctrlPanel').classList.remove('hidden');
+  $('#ctrlPanel').innerHTML='<div class="cpanel"><div class="cp-title">완료! 🎉</div><div class="cp-how">내 점수 <b style="color:var(--gold)">'+sc+'</b><br>다른 사람 기다리는 중…</div></div>';
+}
+function crowHtml(order,scores,coins,showScore){ const medals=['🥇','🥈','🥉','4️⃣'];
+  return '<div class="crows">'+order.map((pid,idx)=>'<div class="crow" style="border-left:4px solid '+PCOLOR[pid]+'"><span>'+medals[idx]+' '+PLAYERS[pid].name+(pid===myPid?' (나)':'')+'</span>'+(showScore?'<span>'+(scores[pid]??0)+'</span>':'')+'<span class="mono" style="color:var(--gold)">'+fmt(coins[pid]??0)+'</span></div>').join('')+'</div>';
+}
+function renderCoopResult(){ const r=lastRes||{}; const order=r.order||[0,1,2,3];
+  $('#ctrlPanel').innerHTML='<div class="cpanel"><div class="cp-title">'+(r.game||'')+' 결과</div>'+crowHtml(order,r.scores||[],r.coins||state.coins,true)+(myPid===0?'<button class="btn" id="cNext">다음 게임 ▶</button>':'<div class="cp-note" style="color:var(--dim)">방장이 다음을 누르면 계속돼요</div>')+'</div>';
+  if(myPid===0)$('#cNext').onclick=()=>{ sfx.tick(); net.write('next/R'+r.round,true); };
+}
+function renderCoopFinal(){ const f=lastFinal||{}; const order=f.order||[0,1,2,3];
+  $('#ctrlPanel').innerHTML='<div class="cpanel"><div class="cp-title">🏆 최종 결과</div>'+crowHtml(order,[],f.coins||state.coins,false)+(myPid===0?'<button class="btn" id="cAgain">다시 하기</button>':'<div class="cp-note">수고했어요!</div>')+'</div>';
+  if(myPid===0)$('#cAgain').onclick=()=>location.reload();
+}
+/* --- host coordinator --- */
+function hostCoopStart(){ initAudio();
+  const hn=(($('#hostName')&&$('#hostName').value)||'').trim()||'방장'; PLAYERS[0].name=hn;
+  joined.forEach(j=>{ PLAYERS[j.pid].name=j.name; });
+  const N=1+joined.length;
+  net.write('names',PLAYERS.map(p=>p.name)); state.coins=[1000,1000,1000,1000]; state.round=0; gameBag=[]; ranRound=-1;
+  becomePlayer(0,hn);                 // 방장도 플레이어
+  hostCoopLoop(N);
+}
+async function hostCoopLoop(N){ const rounds=state.rounds;
+  for(let r=1;r<=rounds;r++){ state.round=r; const game=pickGame();
+    net.write('coins',state.coins.slice());
+    net.write('rgame',{title:game.title,how:HOW[game.title]||'',round:r,total:rounds});
+    net.write('phase','intro');
+    await waitKeys('ready/R'+r, N, 40000);
+    net.write('phase','countdown'); await sleep(3400);
+    net.write('phase','play');
+    const scores=await waitScores(r, N, game.title);
+    const order=[0,1,2,3].sort((a,b)=>scores[b]-scores[a]||a-b);
+    order.forEach((pid,idx)=>{ state.coins[pid]=Math.max(0,state.coins[pid]+[100,60,30,10][idx]); });
+    net.write('coins',state.coins.slice());
+    net.write('roundres',{game:game.title,round:r,scores,order,coins:state.coins.slice()});
+    net.write('phase','result');
+    await waitKey('next/R'+r, 180000);
+  }
+  const order=[0,1,2,3].sort((a,b)=>state.coins[b]-state.coins[a]||a-b);
+  net.write('final',{coins:state.coins.slice(),order}); net.write('phase','final');
+}
+function waitKeys(base,need,timeout){ return new Promise(res=>{ let done=false; const set=new Set();
+  net.watch(base,obj=>{ if(obj)for(let p=0;p<need;p++){ if(obj[p])set.add(p); } if(set.size>=need&&!done){done=true;res();} });
+  setTimeout(()=>{ if(!done){done=true;res();} },timeout); }); }
+function waitKey(key,timeout){ return new Promise(res=>{ let done=false; net.watch(key,v=>{ if(v&&!done){done=true;res();} }); setTimeout(()=>{ if(!done){done=true;res();} },timeout); }); }
+function aiScore(title){ if(title==='메테오 대시')return 5000+Math.floor(rand()*15000); if(title==='스택 타워')return 8+Math.floor(rand()*22); return 2500+Math.floor(rand()*7000); }
+function waitScores(r,N,title){ return new Promise(res=>{ let done=false; const scores=[null,null,null,null];
+  for(let p=N;p<4;p++)scores[p]=aiScore(title);
+  const chk=()=>{ if(scores.slice(0,N).every(x=>x!=null)&&!done){ done=true; res(scores.map(x=>x??aiScore(title))); } };
+  net.watch('score/R'+r,obj=>{ if(obj)for(let p=0;p<N;p++){ if(obj[p]!=null)scores[p]=obj[p]; } chk(); });
+  setTimeout(()=>{ if(!done){ done=true; res(scores.map(x=>x??aiScore(title))); } },45000); }); }
 
 /* QR/링크로 열면(?room=NNNN) 코드 입력 없이 바로 참가 화면으로 */
 (function(){ const room=new URLSearchParams(location.search).get('room');
